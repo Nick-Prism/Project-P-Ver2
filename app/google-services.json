@@ -1,0 +1,29 @@
+{
+    "project_info": {
+      "project_number": "1029412965240",
+      "project_id": "project-p-194a2",
+      "storage_bucket": "project-p-194a2.firebasestorage.app"
+    },
+    "client": [
+      {
+        "client_info": {
+          "mobilesdk_app_id": "1:1029412965240:android:da24a02954e5d451ef968d",
+          "android_client_info": {
+            "package_name": "com.example.collegeeventplanner"
+          }
+        },
+        "oauth_client": [],
+        "api_key": [
+          {
+            "current_key": "AIzaSyCWBPLgP8t_GX0IZE2cYZWLqPXz6899ups"
+          }
+        ],
+        "services": {
+          "appinvite_service": {
+            "other_platform_oauth_client": []
+          }
+        }
+      }
+    ],
+    "configuration_version": "1"
+  }
