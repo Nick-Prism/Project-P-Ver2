@@ -1,7 +1,7 @@
 <resources>
-    <color name="purple_500">#6A1B9A</color>
-    <color name="purple_700">#311B92</color>
-    <color name="teal_200">#03DAC5</color>
+    <color name="primary">#6A1B9A</color>
+    <color name="primary_dark">#311B92</color>
+    <color name="secondary">#03DAC5</color>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
 </resources>
