@@ -8,7 +8,10 @@ import com.example.collegeeventplanner.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -22,27 +25,66 @@ class HomeViewModel @Inject constructor(
 
     init {
         loadEvents()
+        observeEvents()
     }
 
-    fun loadEvents() {
+    private fun loadEvents() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.update { it.copy(isLoading = true) }
             when (val result = repository.getUpcomingEvents()) {
                 is Resource.Success -> {
-                    _state.value = _state.value.copy(
-                        events = result.data ?: emptyList(),
-                        isLoading = false,
-                        error = null
-                    )
+                    _state.update {
+                        it.copy(
+                            events = result.data ?: emptyList(),
+                            isLoading = false,
+                            error = null
+                        )
+                    }
                 }
                 is Resource.Error -> {
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        error = result.message
-                    )
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = result.message
+                        )
+                    }
                 }
             }
         }
+    }
+
+    private fun observeEvents() {
+        repository.observeEvents()
+            .onEach { resource ->
+                when (resource) {
+                    is Resource.Success -> {
+                        _state.update {
+                            it.copy(
+                                events = resource.data ?: emptyList(),
+                                isLoading = false,
+                                error = null
+                            )
+                        }
+                    }
+                    is Resource.Error -> {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                error = resource.message
+                            )
+                        }
+                    }
+                }
+            }
+            .catch { e ->
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        error = e.message ?: "Unknown error"
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     fun refreshEvents() {

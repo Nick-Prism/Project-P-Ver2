@@ -7,6 +7,7 @@ import com.example.collegeeventplanner.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -20,68 +21,84 @@ class QrScannerViewModel @Inject constructor(
 
     fun onQrCodeScanned(qrCodeData: String) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(
-                isLoading = true,
-                error = null,
-                scanSuccess = false
-            )
+            _state.update { 
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    scanSuccess = false,
+                    scannedData = qrCodeData
+                )
+            }
 
-            // Step 1: Validate QR code
-            when (val validationResult = registrationRepository.validateQrCode(qrCodeData)) {
-                is Resource.Success -> {
-                    if (validationResult.data) {
-                        // Step 2: Mark attendance if valid
-                        markAttendance(qrCodeData)
-                    } else {
-                        _state.value = _state.value.copy(
+            validateAndProcessQrCode(qrCodeData)
+        }
+    }
+
+    private suspend fun validateAndProcessQrCode(qrCodeData: String) {
+        when (val validationResult = registrationRepository.validateQrCode(qrCodeData)) {
+            is Resource.Success -> {
+                if (validationResult.data == true) {
+                    processValidQrCode(qrCodeData)
+                } else {
+                    _state.update {
+                        it.copy(
                             isLoading = false,
-                            error = "Invalid QR code"
+                            error = "Invalid QR code format or already scanned"
                         )
                     }
                 }
-                is Resource.Error -> {
-                    _state.value = _state.value.copy(
+            }
+            is Resource.Error -> {
+                _state.update {
+                    it.copy(
                         isLoading = false,
-                        error = validationResult.message ?: "Validation failed"
+                        error = validationResult.message ?: "QR code validation failed"
                     )
                 }
             }
         }
     }
 
-    private suspend fun markAttendance(qrCodeData: String) {
+    private suspend fun processValidQrCode(qrCodeData: String) {
         try {
-            // Parse QR code data (format: "event:eventId|reg:registrationId|timestamp:time")
             val parts = qrCodeData.split("|")
-            if (parts.size != 3) {
-                _state.value = _state.value.copy(
-                    isLoading = false,
-                    error = "Invalid QR code format"
-                )
+            if (parts.size != 3 || !parts[1].startsWith("reg:")) {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        error = "Invalid QR code format"
+                    )
+                }
                 return
             }
 
             val registrationId = parts[1].substringAfter("reg:")
             when (val result = registrationRepository.markAttendance(registrationId)) {
                 is Resource.Success -> {
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        scanSuccess = true,
-                        error = null
-                    )
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            scanSuccess = true,
+                            error = null
+                        )
+                    }
                 }
                 is Resource.Error -> {
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        error = result.message ?: "Failed to mark attendance"
-                    )
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = result.message ?: "Attendance marking failed"
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
-            _state.value = _state.value.copy(
-                isLoading = false,
-                error = "Error processing QR code: ${e.message}"
-            )
+            _state.update {
+                it.copy(
+                    isLoading = false,
+                    error = "Error processing QR code: ${e.message ?: "Unknown error"}"
+                )
+            }
         }
     }
 

@@ -30,46 +30,58 @@ class RegistrationRepositoryImpl @Inject constructor(
         studentId: String
     ): Resource<String> {
         return try {
+            require(eventId.isNotEmpty()) { "Event ID cannot be empty" }
+            require(name.isNotBlank()) { "Name cannot be blank" }
+            require(email.isNotBlank()) { "Email cannot be blank" }
+            require(studentId.isNotBlank()) { "Student ID cannot be blank" }
+
+            val qrCodeData = generateQrCodeData(eventId, studentId)
             val registrationData = hashMapOf(
                 "eventId" to eventId,
                 "name" to name,
                 "email" to email,
                 "studentId" to studentId,
-                "timestamp" to System.currentTimeMillis(),
+                "qrCodeData" to qrCodeData,
+                "timestamp" to FieldValue.serverTimestamp(),
                 "hasAttended" to false
             )
 
             val document = registrationsCollection.add(registrationData).await()
             Resource.Success(document.id)
+        } catch (e: IllegalArgumentException) {
+            Resource.Error(e.message ?: "Invalid registration data")
         } catch (e: Exception) {
-            Resource.Error("Registration failed: ${e.message}")
+            Resource.Error("Registration failed: ${e.message}", e)
         }
     }
 
     override suspend fun getRegistration(registrationId: String): Resource<RegistrationRepository.Registration> {
         return try {
+            require(registrationId.isNotEmpty()) { "Registration ID cannot be empty" }
+            
             val document = registrationsCollection.document(registrationId).get().await()
             document.toObject<RegistrationRepository.Registration>()?.let { registration ->
                 Resource.Success(registration.copy(id = document.id))
             } ?: Resource.Error("Registration not found")
         } catch (e: Exception) {
-            Resource.Error("Failed to get registration: ${e.message}")
+            Resource.Error("Failed to get registration: ${e.message}", e)
         }
     }
 
     override suspend fun validateQrCode(qrCodeData: String): Resource<Boolean> {
         return try {
-            // Parse QR code data and validate
             val parts = qrCodeData.split("|")
-            if (parts.size != 3) return Resource.Error("Invalid QR code format")
+            if (parts.size != 3 || !parts[0].startsWith("event:") || !parts[1].startsWith("reg:")) {
+                return Resource.Error("Invalid QR code format")
+            }
             
             val registrationId = parts[1].substringAfter("reg:")
-            val registration = getRegistration(registrationId)
-            
-            when (registration) {
+            when (val registration = getRegistration(registrationId)) {
                 is Resource.Success -> {
                     if (registration.data.hasAttended) {
                         Resource.Error("Registration already scanned")
+                    } else if (registration.data.qrCodeData != qrCodeData) {
+                        Resource.Error("QR code doesn't match registration")
                     } else {
                         Resource.Success(true)
                     }
@@ -77,18 +89,23 @@ class RegistrationRepositoryImpl @Inject constructor(
                 is Resource.Error -> registration
             }
         } catch (e: Exception) {
-            Resource.Error("QR validation failed: ${e.message}")
+            Resource.Error("QR validation failed: ${e.message}", e)
         }
     }
 
     override suspend fun markAttendance(registrationId: String): Resource<Unit> {
         return try {
+            require(registrationId.isNotEmpty()) { "Registration ID cannot be empty" }
+            
             registrationsCollection.document(registrationId)
-                .update("hasAttended", true)
+                .update(mapOf(
+                    "hasAttended" to true,
+                    "attendedAt" to FieldValue.serverTimestamp()
+                ))
                 .await()
             
             attendanceCollection.document(registrationId)
-                .set(hashMapOf(
+                .set(mapOf(
                     "registrationId" to registrationId,
                     "timestamp" to FieldValue.serverTimestamp()
                 ))
@@ -96,7 +113,7 @@ class RegistrationRepositoryImpl @Inject constructor(
                 
             Resource.Success(Unit)
         } catch (e: Exception) {
-            Resource.Error("Failed to mark attendance: ${e.message}")
+            Resource.Error("Failed to mark attendance: ${e.message}", e)
         }
     }
 
@@ -128,10 +145,13 @@ class RegistrationRepositoryImpl @Inject constructor(
                     return@addSnapshotListener
                 }
 
-                val count = snapshot?.size() ?: 0
-                trySend(Resource.Success(count))
+                trySend(Resource.Success(snapshot?.size() ?: 0))
             }
 
         awaitClose { listener.remove() }
+    }
+
+    private fun generateQrCodeData(eventId: String, studentId: String): String {
+        return "event:$eventId|reg:$studentId|${System.currentTimeMillis()}"
     }
 }
